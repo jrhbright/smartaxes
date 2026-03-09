@@ -1330,12 +1330,12 @@ export default function SmartAxes() {
   }, []);
 
   return (
-    <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", height: "100vh", overflow: "hidden", background: "#f9fafb", fontFamily: SANS }}>
+    <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", ...(isMobile ? { minHeight: "100vh" } : { height: "100vh", overflow: "hidden" }), background: "#f9fafb", fontFamily: SANS }}>
 
       {/* SIDEBAR */}
       <div style={{
         width: isMobile ? "100%" : 272, flexShrink: 0, background: "#fff",
-        borderRight: "1px solid #f1f5f9", overflowY: "auto",
+        borderRight: "1px solid #f1f5f9", overflowY: isMobile ? "visible" : "auto",
         boxShadow: "1px 0 0 #f1f5f9"
       }}>
         {/* Header */}

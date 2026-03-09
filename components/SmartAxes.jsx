@@ -1144,7 +1144,11 @@ export default function SmartAxes() {
         body: JSON.stringify({ prompt: aiPrompt })
       });
       const parsed = await response.json();
-      if (parsed.error) throw new Error(parsed.error);
+      if (!response.ok || parsed.error) {
+        setAiMessage(`Error ${response.status}: ${parsed.error || parsed.detail || "Unknown error"}`);
+        setAiLoading(false);
+        return;
+      }
       setXMin(String(parsed.xMin)); setXMax(String(parsed.xMax));
       setYMin(String(parsed.yMin)); setYMax(String(parsed.yMax));
       setXLabel(parsed.xLabel || ""); setYLabel(parsed.yLabel || "");
@@ -1152,7 +1156,7 @@ export default function SmartAxes() {
       if (showTitle) setTitleText(parsed.title || "");
       setAiMessage(parsed.explanation || "Done!");
     } catch (e) {
-      setAiMessage("Hmm, couldn't interpret that. Try being more specific about the axis ranges.");
+      setAiMessage(`Request failed: ${e.message}`);
     }
     setAiLoading(false);
   };

@@ -1,5 +1,5 @@
 "use client";
-import SmartAxes from "../../components/SmartAxes";
+import SmartAxes from "../components/SmartAxes";
 
 export default function Page() {
   return <SmartAxes />;

@@ -1,6 +1,9 @@
 export const metadata = {
   title: "SmartAxes — Graph Paper Generator",
   description: "Generate graph paper with smart axes for UK schools",
+  icons: {
+    icon: "/icon.svg",
+  },
 };
 
 export default function RootLayout({ children }) {

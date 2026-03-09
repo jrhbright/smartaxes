@@ -1,3 +1,4 @@
+"use client";
 import { useState, useEffect, useRef, useMemo } from "react";
 
 const SANS = "'DM Sans', 'Inter', system-ui, sans-serif";

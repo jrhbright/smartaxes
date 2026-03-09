@@ -1632,7 +1632,7 @@ export default function SmartAxes() {
       </div>
 
       {/* PREVIEW AREA */}
-      <div style={{ flex: 1, padding: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 12, height: "100vh", boxSizing: "border-box", overflow: "hidden" }}>
+      <div style={{ flex: 1, padding: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 12, ...(isMobile ? {} : { height: "100vh", boxSizing: "border-box", overflow: "hidden" }) }}>
 
         {/* Top bar */}
         <div style={{ width: "100%", maxWidth: 600, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -1742,13 +1742,13 @@ export default function SmartAxes() {
         )}
 
         {/* SVG Preview — sized to fit available space in both axes */}
-        <div style={{ flex: 1, minHeight: 0, width: "100%", display: "flex", alignItems: "flex-start", justifyContent: "center", height: "100%" }}>
+        <div style={{ flex: 1, minHeight: 0, width: "100%", display: "flex", alignItems: "flex-start", justifyContent: "center", ...(isMobile ? {} : { height: "100%" }) }}>
           <div
             ref={svgContainerRef}
             style={{
               aspectRatio: "210 / 297",
-              width: "min(100%, calc((100vh - 62px - 40px - 33px) * 210 / 297))",
-              maxHeight: "100%",
+              width: isMobile ? "100%" : "min(100%, calc((100vh - 62px - 40px - 33px) * 210 / 297))",
+              ...(isMobile ? {} : { maxHeight: "100%" }),
               boxShadow: "0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.08)",
               borderRadius: 4, overflow: "hidden", background: "#fff",
               border: "1px solid #e2e8f0"

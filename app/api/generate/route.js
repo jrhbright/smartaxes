@@ -43,7 +43,9 @@ Rules:
 
   if (!response.ok) {
     const err = await response.text();
-    return Response.json({ error: "Gemini API error", detail: err }, { status: 502 });
+    console.error("Gemini error status:", response.status);
+    console.error("Gemini error body:", err);
+    return Response.json({ error: "Gemini API error", status: response.status, detail: err }, { status: 502 });
   }
 
   const data = await response.json();

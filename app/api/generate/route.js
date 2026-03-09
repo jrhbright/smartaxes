@@ -40,7 +40,7 @@ Rules:
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           contents: [{ parts: [{ text: `${systemPrompt}\n\nGraph description: ${prompt}` }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 300 },
+          generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
         }),
       }
     );

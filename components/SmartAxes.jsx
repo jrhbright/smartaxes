@@ -1,11 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 
-// Load DM Sans font
-const fontLink = document.createElement("link");
-fontLink.rel = "stylesheet";
-fontLink.href = "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap";
-document.head.appendChild(fontLink);
-
 const SANS = "'DM Sans', 'Inter', system-ui, sans-serif";
 const SERIF = "'Georgia', serif"; // kept for SVG graph labels only
 
@@ -973,6 +967,16 @@ function Toggle({ checked, onChange, label }) {
 export default function SmartAxes() {
   const svgContainerRef = useRef(null);
   const [containerSize, setContainerSize] = useState({ w: 500, h: 707 });
+
+  // Load font client-side only
+  useEffect(() => {
+    if (document.getElementById("smartaxes-font")) return;
+    const link = document.createElement("link");
+    link.id = "smartaxes-font";
+    link.rel = "stylesheet";
+    link.href = "https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap";
+    document.head.appendChild(link);
+  }, []);
 
   // Core state
   const [xMin, setXMin] = useState(String(INITIAL_PRESET.xMin));

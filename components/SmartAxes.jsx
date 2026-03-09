@@ -438,10 +438,11 @@ function GraphSVG({ config, width, height }) {
 
   return (
     <svg
-      width={pageW}
-      height={pageH}
+      width="100%"
+      height="100%"
       viewBox={`0 0 ${pageW} ${pageH}`}
-      style={{ background: bgColor, fontFamily: "'Georgia', serif" }}
+      preserveAspectRatio="xMidYMid meet"
+      style={{ display: "block", background: bgColor, fontFamily: "'Georgia', serif" }}
       id="smartaxes-svg"
     >
       {/* White background */}
@@ -1040,18 +1041,19 @@ export default function SmartAxes() {
     { id: "a5-2up",            label: "A5 Portrait (×2 on A4 Landscape)" },
   ];
 
-  // Measure container
+  // Track container size for PNG export
   useEffect(() => {
-    const measure = () => {
-      if (svgContainerRef.current) {
-        const w = svgContainerRef.current.clientWidth; // clientWidth excludes border
-        const h = w * (297 / 210); // A4 ratio
-        setContainerSize({ w: Math.max(w, 200), h: Math.max(h, 283) });
+    const el = svgContainerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(entries => {
+      for (const entry of entries) {
+        const w = Math.floor(entry.contentRect.width);
+        const h = Math.floor(entry.contentRect.height);
+        if (w > 10 && h > 10) setContainerSize({ w, h });
       }
-    };
-    measure();
-    window.addEventListener("resize", measure);
-    return () => window.removeEventListener("resize", measure);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
   // URL state sync
@@ -1319,11 +1321,16 @@ export default function SmartAxes() {
     window.addEventListener("afterprint", cleanup);
   };
 
-  // Sidebar width
-  const isMobile = typeof window !== "undefined" && window.innerWidth < 700;
+  // Reactive mobile breakpoint
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth < 700);
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 700);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   return (
-    <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", minHeight: "100vh", background: "#f9fafb", fontFamily: SANS }}>
+    <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", height: "100vh", overflow: "hidden", background: "#f9fafb", fontFamily: SANS }}>
 
       {/* SIDEBAR */}
       <div style={{
@@ -1362,48 +1369,53 @@ export default function SmartAxes() {
             Smart Setup
           </div>
           {/* Textarea with embedded send button */}
-          <div style={{ position: "relative", border: "1px solid #99f6e4", borderRadius: 8, background: "#fff", display: "flex", flexDirection: "column" }}
-            onFocus={() => {}} onBlur={() => {}}
-          >
+          <div style={{ position: "relative", border: "1px solid #99f6e4", borderRadius: 8, background: "#fff" }}>
+            {/* Shadow div — mirrors content to drive auto-height, right padding reserves space for button */}
+            <div aria-hidden="true" style={{
+              padding: "8px 38px 8px 10px",
+              fontSize: 12, fontFamily: SANS, lineHeight: 1.5,
+              whiteSpace: "pre-wrap", wordBreak: "break-word",
+              visibility: "hidden", pointerEvents: "none",
+              minHeight: "3.6em"
+            }}>{aiPrompt + "\u200b"}</div>
             <textarea
               value={aiPrompt}
               onChange={e => { setAiPrompt(e.target.value); setAiMessage(""); }}
               onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleAI(); } }}
               placeholder="Describe your graph… e.g. 'Distance-time, 0–2 hours, up to 100 km'"
-              rows={3}
               style={{
-                width: "100%", padding: "8px 10px 4px 10px", border: "none",
-                borderRadius: "8px 8px 0 0", fontSize: 12, color: "#111827", background: "transparent",
+                position: "absolute", inset: 0, width: "100%", height: "100%",
+                padding: "8px 38px 8px 10px", border: "none", borderRadius: 8,
+                fontSize: 12, color: "#111827", background: "transparent",
                 fontFamily: SANS, resize: "none", boxSizing: "border-box", outline: "none",
-                lineHeight: 1.5
+                lineHeight: 1.5, overflow: "hidden"
               }}
             />
-            <div style={{ display: "flex", justifyContent: "flex-end", padding: "4px 6px 6px" }}>
-              <button
-                onClick={handleAI}
-                disabled={aiLoading}
-                title="Generate axes"
-                style={{
-                  width: 26, height: 26, borderRadius: 7,
-                  background: aiLoading ? "#99f6e4" : "#0d9488",
-                  border: "none", cursor: aiLoading ? "default" : "pointer",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  transition: "background 0.15s", flexShrink: 0
-                }}
-              >
-                {aiLoading ? (
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                    <circle cx="6" cy="6" r="4" stroke="white" strokeWidth="1.5" strokeDasharray="6 6" strokeLinecap="round">
-                      <animateTransform attributeName="transform" type="rotate" from="0 6 6" to="360 6 6" dur="0.8s" repeatCount="indefinite"/>
-                    </circle>
-                  </svg>
-                ) : (
-                  <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
-                    <path d="M2 6h8M7 3l3 3-3 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                )}
-              </button>
-            </div>
+            <button
+              onClick={handleAI}
+              disabled={aiLoading}
+              title="Generate axes"
+              style={{
+                position: "absolute", bottom: 6, right: 6,
+                width: 26, height: 26, borderRadius: 7,
+                background: aiLoading ? "#99f6e4" : "#0d9488",
+                border: "none", cursor: aiLoading ? "default" : "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                transition: "background 0.15s", zIndex: 1
+              }}
+            >
+              {aiLoading ? (
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <circle cx="6" cy="6" r="4" stroke="white" strokeWidth="1.5" strokeDasharray="6 6" strokeLinecap="round">
+                    <animateTransform attributeName="transform" type="rotate" from="0 6 6" to="360 6 6" dur="0.8s" repeatCount="indefinite"/>
+                  </circle>
+                </svg>
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                  <path d="M2 6h8M7 3l3 3-3 3" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              )}
+            </button>
           </div>
           {aiMessage && (
             <div style={{ marginTop: 5, fontSize: 11, color: "#0f766e", fontFamily: SANS, display: "flex", alignItems: "center", gap: 3, flexWrap: "nowrap" }}>
@@ -1620,15 +1632,16 @@ export default function SmartAxes() {
       </div>
 
       {/* PREVIEW AREA */}
-      <div style={{ flex: 1, padding: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
+      <div style={{ flex: 1, padding: 20, display: "flex", flexDirection: "column", alignItems: "center", gap: 12, height: "100vh", boxSizing: "border-box", overflow: "hidden" }}>
 
         {/* Top bar */}
         <div style={{ width: "100%", maxWidth: 600, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           {/* Paper size picker */}
           <div style={{ position: "relative" }}>
             <button
-              onClick={() => setPaperOpen(o => !o)}
-              style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: "#fff", border: "1px solid #e5e7eb", borderRadius: paperOpen ? "7px 7px 0 0" : 7, fontSize: 12, fontWeight: 500, color: "#374151", cursor: "pointer", fontFamily: SANS, boxShadow: "0 1px 2px rgba(0,0,0,0.05)" }}
+              onClick={undefined}
+              disabled
+              style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 7, fontSize: 12, fontWeight: 500, color: "#9ca3af", cursor: "not-allowed", fontFamily: SANS, boxShadow: "none", opacity: 0.7 }}
             >
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1.5" y="0.5" width="9" height="11" rx="1" stroke="currentColor" strokeWidth="1.2"/><path d="M3.5 3.5h5M3.5 6h5M3.5 8.5h3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>
               {PAPER_OPTIONS.find(p => p.id === paperSize)?.label}
@@ -1728,23 +1741,27 @@ export default function SmartAxes() {
           </div>
         )}
 
-        {/* SVG Preview */}
-        <div
-          ref={svgContainerRef}
-          style={{
-            width: "100%", maxWidth: 600,
-            boxShadow: "0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.08)",
-            borderRadius: 4, overflow: "hidden", background: "#fff",
-            border: "1px solid #e2e8f0"
-          }}
-        >
+        {/* SVG Preview — sized to fit available space in both axes */}
+        <div style={{ flex: 1, minHeight: 0, width: "100%", display: "flex", alignItems: "flex-start", justifyContent: "center", height: "100%" }}>
+          <div
+            ref={svgContainerRef}
+            style={{
+              aspectRatio: "210 / 297",
+              width: "min(100%, calc((100vh - 62px - 40px - 33px) * 210 / 297))",
+              maxHeight: "100%",
+              boxShadow: "0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.08)",
+              borderRadius: 4, overflow: "hidden", background: "#fff",
+              border: "1px solid #e2e8f0"
+            }}
+          >
           {graphConfig ? (
-            <GraphSVG config={graphConfig} width={containerSize.w} height={containerSize.h} />
+            <GraphSVG config={graphConfig} width={794} height={1123} />
           ) : (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, color: "#94a3b8", fontSize: 13 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#94a3b8", fontSize: 13 }}>
               Enter valid axis ranges to see your graph
             </div>
           )}
+          </div>
         </div>
 
         <div style={{ fontSize: 10, color: "#e5e7eb", fontFamily: SANS }}>

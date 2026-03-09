@@ -1276,7 +1276,48 @@ export default function SmartAxes() {
     triggerDownload(pngURL, "smartaxes.png");
   };
 
-  const handlePrint = () => window.print();
+  const handlePrint = () => {
+    // Inject print styles that hide everything except the SVG
+    const style = document.createElement("style");
+    style.id = "smartaxes-print-style";
+    style.innerHTML = `
+      @media print {
+        @page { margin: 0; size: A4 portrait; }
+        body > * { display: none !important; }
+        #smartaxes-print-frame { display: block !important; }
+      }
+    `;
+    document.head.appendChild(style);
+
+    // Create a full-page print frame containing just the SVG
+    const svg = document.getElementById("smartaxes-svg");
+    if (!svg) { document.head.removeChild(style); return; }
+
+    const frame = document.createElement("div");
+    frame.id = "smartaxes-print-frame";
+    frame.style.cssText = "display:none; position:fixed; inset:0; z-index:99999; background:#fff;";
+    frame.innerHTML = svg.outerHTML;
+
+    // Make the SVG fill the page exactly
+    const clonedSvg = frame.querySelector("svg");
+    if (clonedSvg) {
+      clonedSvg.style.cssText = "width:100vw; height:100vh; display:block;";
+    }
+
+    document.body.appendChild(frame);
+
+    window.print();
+
+    // Clean up after print dialog closes
+    const cleanup = () => {
+      const f = document.getElementById("smartaxes-print-frame");
+      const s = document.getElementById("smartaxes-print-style");
+      if (f) document.body.removeChild(f);
+      if (s) document.head.removeChild(s);
+      window.removeEventListener("afterprint", cleanup);
+    };
+    window.addEventListener("afterprint", cleanup);
+  };
 
   // Sidebar width
   const isMobile = typeof window !== "undefined" && window.innerWidth < 700;

@@ -865,7 +865,7 @@ function GraphSVG({ config }) {
       height="100%"
       viewBox={`0 0 ${fullW} ${fullH}`}
       preserveAspectRatio="xMidYMid meet"
-      style={{ display: "block", background: twoUp ? "#e5e7eb" : bgColor, fontFamily: "'Georgia', serif" }}
+      style={{ display: "block", background: bgColor, fontFamily: "'Georgia', serif" }}
       id="smartaxes-svg"
     >
       {twoUp ? (
@@ -883,17 +883,28 @@ function GraphSVG({ config }) {
               <rect x={rightOffset} y={0} width={HALF_W} height={fullH} />
             </clipPath>
           </defs>
-          {/* Gap — grey background */}
-          <rect x={HALF_W} y={0} width={GAP_PX} height={fullH} fill="#e5e7eb" />
-          {/* Cut marks at top and bottom of gap */}
-          {[0, fullH].map((y, i) => (
-            <g key={i} stroke="#666" strokeWidth={0.8}>
-              {/* left side of gap */}
-              <line x1={HALF_W - CUT} y1={y} x2={HALF_W} y2={y} />
-              {/* right side of gap */}
-              <line x1={HALF_W + GAP_PX} y1={y} x2={HALF_W + GAP_PX + CUT} y2={y} />
-            </g>
-          ))}
+          {/* Gap — white */}
+          <rect x={HALF_W} y={0} width={GAP_PX} height={fullH} fill="#fff" />
+          {/* Cut marks — T at top, inverted T at bottom, centred on gap */}
+          {(() => {
+            const cx = HALF_W + GAP_PX / 2; // centre of gap
+            const armMM = 10; // horizontal arm length in mm (5mm each side)
+            const legMM = 10; // vertical leg length in mm
+            const arm = armMM * MM_TO_PX;
+            const leg = legMM * MM_TO_PX;
+            const sw = 0.8;
+            const col = "#999";
+            return (
+              <g stroke={col} strokeWidth={sw} strokeLinecap="round">
+                {/* Top — T shape: horizontal bar at very top, leg pointing down */}
+                <line x1={cx - arm / 2} y1={0} x2={cx + arm / 2} y2={0} />
+                <line x1={cx} y1={0} x2={cx} y2={leg} />
+                {/* Bottom — inverted T: horizontal bar at very bottom, leg pointing up */}
+                <line x1={cx - arm / 2} y1={fullH} x2={cx + arm / 2} y2={fullH} />
+                <line x1={cx} y1={fullH} x2={cx} y2={fullH - leg} />
+              </g>
+            );
+          })()}
         </>
       ) : (
         graphContent

@@ -86,10 +86,8 @@ function calculateAxis(min, max) {
   return { min: niceMin, max: niceMax, interval, minor, medium, smallSquaresNeeded };
 }
 
-function smartCalculateAxes(xMin, xMax, yMin, yMax) {
-  // Available space in small squares at standard 2mm
-  const availXSq = A4_WIDTH_MM  / STANDARD_SQUARE_MM;
-  const availYSq = A4_HEIGHT_MM / STANDARD_SQUARE_MM;
+function smartCalculateAxes(xMin, xMax, yMin, yMax, availXSq, availYSq) {
+  // availXSq / availYSq: available space in standard 2mm squares, passed in dynamically
 
   // Generate candidate intervals for an axis range
   function candidateIntervals(range) {
@@ -218,17 +216,22 @@ function GraphSVG({ config, width, height }) {
   const pageW = width;
   const pageH = height;
 
-  // ── Margin constants (easy to tune) ───────────────────────────
-  const LABEL_ORIGIN_MM  = 20;  // 2cm: label space when axis is at grid edge
-  const MIN_CLEARANCE_MM = 8;   // 8mm: clearance when axis is inside the grid
-  const RIGHT_MARGIN_MM  = 12;  // space for arrow tip + axis letter on right
-  const TOP_MARGIN_MM    = 12;  // space for arrow tip + axis letter on top
+  // ── Font sizes — computed first, everything else depends on them ──
+  const BASE_FONT_PX = 2 * MM_TO_PX * 2.2 * 1.2;
+  const fontSize      = Math.max(6, Math.min(BASE_FONT_PX * 1.8, BASE_FONT_PX * labelScale));
+  const labelFontSize = fontSize + 2;
+  const subFontSize   = Math.max(6, Math.min(BASE_FONT_PX * 1.8, BASE_FONT_PX * subLabelScale));
 
-  const labelOrigin  = LABEL_ORIGIN_MM  * MM_TO_PX;
-  const minClearance = MIN_CLEARANCE_MM * MM_TO_PX;
-  const rightMargin  = RIGHT_MARGIN_MM  * MM_TO_PX;
-  const topMargin    = TOP_MARGIN_MM    * MM_TO_PX;
-  const printMargin  = 8 * MM_TO_PX;  // kept only for gridExtend clipping
+  // ── Margin constants ──
+  const EDGE_MM     = 8;
+  const TICK_GAP_PX = 4;
+  const TICK_LEN    = 6;
+  const NUM_PAD     = 4;
+  const ARROW_SIZE  = 7;
+  const edgePx      = EDGE_MM * MM_TO_PX;
+  const subLineH    = subFontSize * 1.4; // one reserved line for sub-label
+  const subGap      = subFontSize * 0.5;
+  const tickH       = fontSize * 1.1;
 
   // ── Header space ───────────────────────────────────────────────
   const worksheetH  = showWorksheet ? 72 : 0;
@@ -239,63 +242,75 @@ function GraphSVG({ config, width, height }) {
   const xNegative = xAxis.min < 0;  // y-axis is inside the grid
   const yNegative = yAxis.min < 0;  // x-axis is inside the grid
 
-  // Left: 2cm from page edge if axis at left, 5mm if axis is inside
-  const leftClearance   = xNegative ? minClearance : labelOrigin;
-  // Bottom: 2cm from page edge if axis at bottom, 5mm if axis is inside
-  const bottomClearance = yNegative ? minClearance : labelOrigin;
+  // ── Estimate widest y-axis tick label for left margin ─────────
+  const yTickStrsG = [];
+  for (let i = 0; i <= Math.round((yAxis.max - yAxis.min) / yAxis.interval); i++) {
+    const v = Math.round((yAxis.min + i * yAxis.interval) * 1e10) / 1e10;
+    yTickStrsG.push(formatTick(v, yAxis.interval));
+  }
+  const maxYCharsEst = Math.max(...yTickStrsG.map(s => s.length));
+  const estNumWidth  = maxYCharsEst * fontSize * 0.52;
+
+  // ── Dynamic margins ────────────────────────────────────────────
+  // Left: when y-axis at edge, reserve room for sub-label + tick numbers
+  const leftMargin = xNegative
+    ? edgePx
+    : edgePx + subLineH + subGap + estNumWidth + TICK_GAP_PX + TICK_LEN / 2;
+
+  // Bottom: when x-axis at edge, reserve room for sub-label + tick height
+  const bottomMargin = yNegative
+    ? edgePx
+    : edgePx + subLineH + subGap + tickH + TICK_GAP_PX + TICK_LEN / 2;
+
+  // Right: arrow tip + axis letter
+  const rightMargin = edgePx + ARROW_SIZE + fontSize * 1.0;
+  // Top: arrow tip + axis letter + header
+  const topMargin   = edgePx + ARROW_SIZE + fontSize * 1.0 + headerH;
+
+  const printMargin = edgePx; // for gridExtend clipping
 
   // ── Available space ───────────────────────────────────────────
   const availRight = pageW - rightMargin;
-  const availTop   = headerH + topMargin;
-  // For sizing purposes, use the full available area
-  const availW = availRight - leftClearance;
-  const availH = (pageH - bottomClearance) - availTop;
+  const availTop   = topMargin;
+  const availW = availRight - leftMargin;
+  const availH = (pageH - bottomMargin) - availTop;
 
   // ── Fit square size into available space ──────────────────────
   const STD_SQ_PX = 2 * MM_TO_PX;
   const MIN_SQ_PX = STD_SQ_PX * MIN_SQUARES;
-
-  // ── Use minor divisions as calculated by calculateAxis ───────────
-  // getMinorDivisions already picks sensible values (10 with medium 5, or 5 for coarse intervals)
-  // The page-filling is achieved simply by letting actualSqPx grow uncapped.
-  const xMajor = Math.round((xAxis.max - xAxis.min) / xAxis.interval);
-  const yMajor = Math.round((yAxis.max - yAxis.min) / yAxis.interval);
 
   const xAxisF = { ...xAxis };
   const yAxisF = { ...yAxis };
 
   const xSquares = Math.round(xAxisF.smallSquaresNeeded);
   const ySquares = Math.round(yAxisF.smallSquaresNeeded);
-  const MAX_SQ_PX = 5 * MM_TO_PX; // 5mm per small square max — beyond this looks stretched
-  const maxSqPx  = Math.min(availW / xSquares, availH / ySquares, MAX_SQ_PX);
+  const MAX_SQ_PX = 5 * MM_TO_PX;
+  const maxSqPx   = Math.min(availW / xSquares, availH / ySquares, MAX_SQ_PX);
   const actualSqPx = Math.max(MIN_SQ_PX, maxSqPx);
 
   // ── Grid dimensions ───────────────────────────────────────────
   const gridW = xSquares * actualSqPx;
   const gridH = ySquares * actualSqPx;
 
-  // ── Resolve alignment (auto uses axis sign as default) ───────
+  // ── Resolve alignment ─────────────────────────────────────────
   const resolvedAlignH = alignH === "auto" ? (xNegative ? "centre" : "left")   : alignH;
   const resolvedAlignV = alignV === "auto" ? (yNegative ? "centre" : "bottom") : alignV;
 
   // ── Horizontal position ───────────────────────────────────────
+  // Centre: use full page width symmetrically (equal margins each side)
+  // Left: use leftMargin as the starting point
   const gridLeft = resolvedAlignH === "left"
-    ? leftClearance
-    : (leftClearance + availRight) / 2 - gridW / 2;
+    ? leftMargin
+    : (pageW - gridW) / 2;
   const gridRight = gridLeft + gridW;
 
   // ── Vertical position ─────────────────────────────────────────
+  // Centre: use available vertical space between topMargin and bottomMargin
+  // Bottom: pin to bottomMargin
   const gridBottom = resolvedAlignV === "bottom"
-    ? pageH - bottomClearance
+    ? pageH - bottomMargin
     : availTop + availH / 2 + gridH / 2;
   const gridTop = gridBottom - gridH;
-
-  // Font size: fixed range regardless of square size, scaled by user preference
-  // Base is always relative to 2mm squares at the current MM_TO_PX ratio
-  const BASE_FONT_PX = 2 * MM_TO_PX * 2.2 * 1.2; // base font size relative to standard 2mm squares
-  const fontSize = Math.max(6, Math.min(16, BASE_FONT_PX * labelScale));
-  const labelFontSize = fontSize + 2;
-  const subFontSize = Math.max(6, Math.min(16, BASE_FONT_PX * subLabelScale));
 
   // Axis position in grid coords
   const xOriginFrac = (0 - xAxis.min) / (xAxis.max - xAxis.min);
@@ -310,33 +325,20 @@ function GraphSVG({ config, width, height }) {
   const textColor = "#111";
   const bgColor = "#fff";
 
-  const TICK_LEN = 6;
-  const NUM_PAD = 4;
-
   // Line weights
   const minorW = 0.3;
   const mediumW = 0.6;
   const majorW = 1.2;
   const axisW = 2.2;
   const tickW = 1.5;
-  // Real graph paper: minor very faint, medium slightly visible, major clearly distinct
   const minorOpacity  = isBlack ? 0.18 : 0.25;
   const mediumOpacity = isBlack ? 0.40 : 0.50;
   const majorOpacity  = isBlack ? 0.75 : 0.85;
-  const tickLen = TICK_LEN;
-  const numPad = NUM_PAD;
-  const arrowSize = 7;
+  const tickLen  = TICK_LEN;
+  const numPad   = NUM_PAD;
+  const arrowSize = ARROW_SIZE;
 
-  // Leftmost x on the page — aligns with y tick numbers (or sub-label if present)
-  const maxYCharsEst = (() => {
-    const vals = [];
-    for (let i = 0; i <= Math.round((yAxis.max - yAxis.min) / yAxis.interval); i++) {
-      const v = Math.round((yAxis.min + i * yAxis.interval) * 1e10) / 1e10;
-      vals.push(formatTick(v, yAxis.interval));
-    }
-    return Math.max(...vals.map(s => s.length));
-  })();
-  const estNumWidth = maxYCharsEst * fontSize * 0.52;
+  // Leftmost x on the page — for worksheet header alignment
   const approxYAxisX = xOriginPx < gridLeft ? gridLeft : (xOriginPx > gridRight ? gridRight : xOriginPx);
   const numbersXEst = approxYAxisX - tickLen / 2 - numPad;
   const leftmostX = Math.min(
@@ -725,7 +727,8 @@ function GraphSVG({ config, width, height }) {
       {/* X sub-label — centred on positive part of x axis, never overlapping y axis, wraps if needed */}
       {xSubLabel && (() => {
         const numbersBaselineY = xAxisY + tickLen / 2 + 3 + fontSize;
-        const subY = numbersBaselineY + fontSize * 0.4 + 12;
+        const subGapPx = subFontSize * 0.25 + 2;
+        const subY = numbersBaselineY + subGapPx + subFontSize;
         const posLeft = yAxisX;
         const posRight = gridRight;
         const posCentreX = posLeft + (posRight - posLeft) / 2;
@@ -769,7 +772,8 @@ function GraphSVG({ config, width, height }) {
         })();
         const estimatedNumWidth = maxChars * fontSize * 0.52;
         const numbersX = yAxisX - tickLen / 2 - numPad;
-        const subX = numbersX - estimatedNumWidth - 6;
+        const subGapPx = subFontSize * 0.25 + 2;
+        const subX = numbersX - estimatedNumWidth - subGapPx - subFontSize / 2;
         const posTop = gridTop;
         const posBottom = xAxisY;
         const centreY = posTop + (posBottom - posTop) / 2;
@@ -1096,13 +1100,87 @@ export default function SmartAxes() {
     window.history.replaceState({}, "", "?" + params.toString());
   }, [xMin, xMax, yMin, yMax, xLabel, yLabel, xSubLabel, ySubLabel, bw, gridExtend, showWorksheet, instruction, showTitle, titleText, titlePosition]);
 
-  // Compute axes config
+  // Compute axes config — recalculates when ranges OR layout-affecting settings change
   const axesConfig = useMemo(() => {
     const xn = parseFloat(xMin), xx = parseFloat(xMax);
     const yn = parseFloat(yMin), yx = parseFloat(yMax);
     if (isNaN(xn) || isNaN(xx) || isNaN(yn) || isNaN(yx)) return null;
-    return smartCalculateAxes(xn, xx, yn, yx);
-  }, [xMin, xMax, yMin, yMax]);
+
+    // ── Font sizes (same formula as GraphSVG, using fixed A4 pixel width 794px) ──
+    const MM_TO_PX = 794 / 210;
+    const BASE_FONT_PX = 2 * MM_TO_PX * 2.2 * 1.2;
+    const tickFontPx  = Math.max(6, Math.min(BASE_FONT_PX * 1.8, BASE_FONT_PX * labelScale));
+    const subFontPx   = Math.max(6, Math.min(BASE_FONT_PX * 1.8, BASE_FONT_PX * subLabelScale));
+
+    // ── Estimate widest y-axis tick label (from raw range before rounding) ──
+    const yRange = yx - yn;
+    const roughYInterval = findNiceInterval(yRange, 8);
+    const roughYMin = Math.round(Math.floor(yn / roughYInterval) * roughYInterval * 1e10) / 1e10;
+    const roughYMax = Math.round(Math.ceil(yx  / roughYInterval) * roughYInterval * 1e10) / 1e10;
+    const yTickStrs = [];
+    for (let i = 0; i <= Math.round((roughYMax - roughYMin) / roughYInterval); i++) {
+      yTickStrs.push(formatTick(Math.round((roughYMin + i * roughYInterval) * 1e10) / 1e10, roughYInterval));
+    }
+    const maxYTickChars = Math.max(...yTickStrs.map(s => s.length));
+    const estYTickWidthPx = maxYTickChars * tickFontPx * 0.52;
+
+    // ── Estimate widest x-axis tick label ──
+    const xRange = xx - xn;
+    const roughXInterval = findNiceInterval(xRange, 8);
+    const roughXMin = Math.round(Math.floor(xn / roughXInterval) * roughXInterval * 1e10) / 1e10;
+    const roughXMax = Math.round(Math.ceil(xx  / roughXInterval) * roughXInterval * 1e10) / 1e10;
+    const xTickStrs = [];
+    for (let i = 0; i <= Math.round((roughXMax - roughXMin) / roughXInterval); i++) {
+      xTickStrs.push(formatTick(Math.round((roughXMin + i * roughXInterval) * 1e10) / 1e10, roughXInterval));
+    }
+    const maxXTickChars = Math.max(...xTickStrs.map(s => s.length));
+    const estXTickWidthPx = maxXTickChars * tickFontPx * 0.52; // widest x label (for bottom clearance)
+
+    // ── Constants ──
+    const EDGE_MM      = 8;   // minimum gap from page edge
+    const TICK_GAP_PX  = 4;   // numPad between tick and number
+    const TICK_LEN_PX  = 6;
+    const ARROW_PX     = 7;
+    const edgePx       = EDGE_MM * MM_TO_PX;
+    const subLineH     = subFontPx * 1.4; // one line of sub-label (always reserved)
+    const subGap       = subFontPx * 0.5; // gap between sub-label and tick numbers
+
+    // ── Header space ──
+    const worksheetH  = showWorksheet ? 72 : 0;
+    const aboveTitleH = (showTitle && titlePosition === "above") ? 28 : 0;
+    const headerH     = worksheetH + aboveTitleH;
+
+    const xNegative = xn < 0; // y-axis inside grid
+    const yNegative = yn < 0; // x-axis inside grid
+
+    // ── Left margin ──
+    // When y-axis is at left edge: edge + subLabel line + gap + tick width + tick gap + tick mark
+    // When y-axis is inside grid: just minClearance
+    const leftMarginPx = xNegative
+      ? 8 * MM_TO_PX
+      : edgePx + subLineH + subGap + estYTickWidthPx + TICK_GAP_PX + TICK_LEN_PX / 2;
+
+    // ── Bottom margin ──
+    // When x-axis is at bottom edge: edge + subLabel line + gap + tick height + tick gap + tick mark
+    const tickHeightPx = tickFontPx * 1.1;
+    const bottomMarginPx = yNegative
+      ? 8 * MM_TO_PX
+      : edgePx + subLineH + subGap + tickHeightPx + TICK_GAP_PX + TICK_LEN_PX / 2;
+
+    // ── Right / Top margins ──
+    const rightMarginPx = 8 * MM_TO_PX + ARROW_PX + tickFontPx * 1.0; // arrow tip + "x" label
+    const topMarginPx   = (8 * MM_TO_PX) + ARROW_PX + tickFontPx * 1.0 + headerH;
+
+    // ── Available space in px then convert to 2mm squares ──
+    const pageWpx = 794;
+    const pageHpx = 1123;
+    const availWpx = pageWpx - leftMarginPx - rightMarginPx;
+    const availHpx = pageHpx - topMarginPx - bottomMarginPx;
+    const availXSq = Math.max(10, availWpx / (STANDARD_SQUARE_MM * MM_TO_PX));
+    const availYSq = Math.max(10, availHpx / (STANDARD_SQUARE_MM * MM_TO_PX));
+
+    return smartCalculateAxes(xn, xx, yn, yx, availXSq, availYSq);
+  }, [xMin, xMax, yMin, yMax, labelScale, subLabelScale, xSubLabel, ySubLabel, showWorksheet, showTitle, titlePosition]);
 
   useEffect(() => {
     if (axesConfig) setWarnings(axesConfig.warnings);

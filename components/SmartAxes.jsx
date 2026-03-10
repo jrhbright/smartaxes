@@ -317,11 +317,11 @@ function GraphSVG({ config }) {
   const resolvedAlignV = alignV === "auto" ? (yNegative ? "centre" : "bottom") : alignV;
 
   // ── Horizontal position ───────────────────────────────────────
-  // Centre: use full page width symmetrically (equal margins each side)
-  // Left: use leftMargin as the starting point
+  // Left: grid starts at leftMargin
+  // Centre: grid centred in the available space between leftMargin and rightMargin
   const gridLeft = resolvedAlignH === "left"
     ? leftMargin
-    : (pageW - gridW) / 2;
+    : leftMargin + (availW - gridW) / 2;
   const gridRight = gridLeft + gridW;
 
   // ── Vertical position ─────────────────────────────────────────

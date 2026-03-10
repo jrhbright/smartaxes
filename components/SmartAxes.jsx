@@ -200,7 +200,7 @@ function formatTick(value, interval) {
 // ============================================================
 // SVG GRAPH RENDERER
 // ============================================================
-function GraphSVG({ config, width, height }) {
+function GraphSVG({ config }) {
   const {
     xAxis, yAxis, squareSizeMM,
     xLabel, yLabel, xSubLabel, ySubLabel,
@@ -209,12 +209,32 @@ function GraphSVG({ config, width, height }) {
     showTitle, titleText, titlePosition,
     labelScale, subLabelScale, labelBold, subLabelBold,
     alignH = "auto", alignV = "auto",
+    paperSize = "a4-portrait",
   } = config;
 
-  // Derive mm-to-px from actual rendered width (A4 = 210mm wide)
-  const MM_TO_PX = width / 210;
-  const pageW = width;
-  const pageH = height;
+  // Paper dimensions from size
+  const PAPER_SIZES_SVG = {
+    "a4-portrait":  { wMM: 210, hMM: 297, wPx: 794,  hPx: 1123, twoUp: false },
+    "a4-landscape": { wMM: 297, hMM: 210, wPx: 1123, hPx: 794,  twoUp: false },
+    "a5-2up":       { wMM: 297, hMM: 210, wPx: 1123, hPx: 794,  twoUp: true  },
+  };
+  const paper = PAPER_SIZES_SVG[paperSize] || PAPER_SIZES_SVG["a4-portrait"];
+  const twoUp = paper.twoUp;
+
+  // For 2-up: the full SVG canvas is A4 landscape, but each graph lives in one A5 half.
+  // Gap between halves: 3mm in px
+  const GAP_MM = 3;
+  const GAP_PX = twoUp ? Math.round(GAP_MM * (paper.wPx / paper.wMM)) : 0;
+  const HALF_W = twoUp ? (paper.wPx - GAP_PX) / 2 : paper.wPx;
+
+  // MM_TO_PX and page dimensions for the graph's coordinate system
+  // For 2-up, the graph thinks it's on an A5 portrait page (148.5 × 210mm)
+  const graphWPx = twoUp ? HALF_W : paper.wPx;
+  const graphHPx = paper.hPx;
+  const graphWMM = twoUp ? 148.5 : paper.wMM;
+  const MM_TO_PX = graphWPx / graphWMM;
+  const pageW = graphWPx;
+  const pageH = graphHPx;
 
   // ── Font sizes — computed first, everything else depends on them ──
   const BASE_FONT_PX = 2 * MM_TO_PX * 2.2 * 1.2;
@@ -438,15 +458,14 @@ function GraphSVG({ config, width, height }) {
   const xAxisY = xAxisOnGraph ? yOriginPx : (yAxis.min > 0 ? gridBottom : gridTop);
   const yAxisX = yAxisOnGraph ? xOriginPx : (xAxis.min > 0 ? gridLeft : gridRight);
 
-  return (
-    <svg
-      width="100%"
-      height="100%"
-      viewBox={`0 0 ${pageW} ${pageH}`}
-      preserveAspectRatio="xMidYMid meet"
-      style={{ display: "block", background: bgColor, fontFamily: "'Georgia', serif" }}
-      id="smartaxes-svg"
-    >
+  const fullW = paper.wPx;
+  const fullH = paper.hPx;
+
+  // Cut mark size in px
+  const CUT = 8;
+
+  const graphContent = (
+    <>
       {/* White background */}
       <rect width={pageW} height={pageH} fill={bgColor} />
 
@@ -834,6 +853,51 @@ function GraphSVG({ config, width, height }) {
           </text>
         );
       })()}
+    </>
+  );
+
+  // ── Render ────────────────────────────────────────────────────
+  const rightOffset = HALF_W + GAP_PX;
+
+  return (
+    <svg
+      width="100%"
+      height="100%"
+      viewBox={`0 0 ${fullW} ${fullH}`}
+      preserveAspectRatio="xMidYMid meet"
+      style={{ display: "block", background: twoUp ? "#e5e7eb" : bgColor, fontFamily: "'Georgia', serif" }}
+      id="smartaxes-svg"
+    >
+      {twoUp ? (
+        <>
+          {/* Left half */}
+          <g>{graphContent}</g>
+          {/* Right half — identical graph translated across */}
+          <g transform={`translate(${rightOffset}, 0)`}>{graphContent}</g>
+          {/* Clip paths */}
+          <defs>
+            <clipPath id="left-clip">
+              <rect x={0} y={0} width={HALF_W} height={fullH} />
+            </clipPath>
+            <clipPath id="right-clip" clipPathUnits="userSpaceOnUse">
+              <rect x={rightOffset} y={0} width={HALF_W} height={fullH} />
+            </clipPath>
+          </defs>
+          {/* Gap — grey background */}
+          <rect x={HALF_W} y={0} width={GAP_PX} height={fullH} fill="#e5e7eb" />
+          {/* Cut marks at top and bottom of gap */}
+          {[0, fullH].map((y, i) => (
+            <g key={i} stroke="#666" strokeWidth={0.8}>
+              {/* left side of gap */}
+              <line x1={HALF_W - CUT} y1={y} x2={HALF_W} y2={y} />
+              {/* right side of gap */}
+              <line x1={HALF_W + GAP_PX} y1={y} x2={HALF_W + GAP_PX + CUT} y2={y} />
+            </g>
+          ))}
+        </>
+      ) : (
+        graphContent
+      )}
     </svg>
   );
 }
@@ -1037,13 +1101,13 @@ export default function SmartAxes() {
   const [paperSize, setPaperSize] = useState("a4-portrait");
   const [paperOpen, setPaperOpen] = useState(false);
 
-  const PAPER_OPTIONS = [
-    { id: "a4-portrait",       label: "A4 Portrait" },
-    { id: "a4-landscape",      label: "A4 Landscape" },
-    { id: "a5-portrait",       label: "A5 Portrait" },
-    { id: "a5-landscape",      label: "A5 Landscape" },
-    { id: "a5-2up",            label: "A5 Portrait (×2 on A4 Landscape)" },
-  ];
+  const PAPER_SIZES = {
+    "a4-portrait":  { label: "A4 Portrait",  wMM: 210, hMM: 297, wPx: 794,  hPx: 1123 },
+    "a4-landscape": { label: "A4 Landscape", wMM: 297, hMM: 210, wPx: 1123, hPx: 794  },
+    "a5-2up":       { label: "2× A5 on A4 Landscape", wMM: 297, hMM: 210, wPx: 1123, hPx: 794, twoUp: true },
+  };
+  const PAPER_OPTIONS = Object.entries(PAPER_SIZES).map(([id, p]) => ({ id, label: p.label }));
+  const paper = PAPER_SIZES[paperSize] || PAPER_SIZES["a4-portrait"];
 
   // Track container size for PNG export
   useEffect(() => {
@@ -1106,8 +1170,12 @@ export default function SmartAxes() {
     const yn = parseFloat(yMin), yx = parseFloat(yMax);
     if (isNaN(xn) || isNaN(xx) || isNaN(yn) || isNaN(yx)) return null;
 
-    // ── Font sizes (same formula as GraphSVG, using fixed A4 pixel width 794px) ──
-    const MM_TO_PX = 794 / 210;
+    // ── Font sizes (same formula as GraphSVG, using selected paper width) ──
+    const twoUp = paperSize === "a5-2up";
+    const GAP_MM = twoUp ? 3 : 0;
+    const graphWMM = twoUp ? (paper.wMM - GAP_MM) / 2 : paper.wMM;
+    const graphWPx = twoUp ? (paper.wPx - Math.round(GAP_MM * paper.wPx / paper.wMM)) / 2 : paper.wPx;
+    const MM_TO_PX = graphWPx / graphWMM;
     const BASE_FONT_PX = 2 * MM_TO_PX * 2.2 * 1.2;
     const tickFontPx  = Math.max(6, Math.min(BASE_FONT_PX * 1.8, BASE_FONT_PX * labelScale));
     const subFontPx   = Math.max(6, Math.min(BASE_FONT_PX * 1.8, BASE_FONT_PX * subLabelScale));
@@ -1172,15 +1240,15 @@ export default function SmartAxes() {
     const topMarginPx   = (8 * MM_TO_PX) + ARROW_PX + tickFontPx * 1.0 + headerH;
 
     // ── Available space in px then convert to 2mm squares ──
-    const pageWpx = 794;
-    const pageHpx = 1123;
+    const pageWpx = graphWPx;
+    const pageHpx = paper.hPx;
     const availWpx = pageWpx - leftMarginPx - rightMarginPx;
     const availHpx = pageHpx - topMarginPx - bottomMarginPx;
     const availXSq = Math.max(10, availWpx / (STANDARD_SQUARE_MM * MM_TO_PX));
     const availYSq = Math.max(10, availHpx / (STANDARD_SQUARE_MM * MM_TO_PX));
 
     return smartCalculateAxes(xn, xx, yn, yx, availXSq, availYSq);
-  }, [xMin, xMax, yMin, yMax, labelScale, subLabelScale, xSubLabel, ySubLabel, showWorksheet, showTitle, titlePosition]);
+  }, [xMin, xMax, yMin, yMax, labelScale, subLabelScale, xSubLabel, ySubLabel, showWorksheet, showTitle, titlePosition, paperSize]);
 
   useEffect(() => {
     if (axesConfig) setWarnings(axesConfig.warnings);
@@ -1197,8 +1265,9 @@ export default function SmartAxes() {
       showTitle, titleText, titlePosition,
       labelScale, subLabelScale, labelBold, subLabelBold,
       alignH, alignV,
+      paperSize,
     };
-  }, [axesConfig, xLabel, yLabel, xSubLabel, ySubLabel, showGrid, showMinorGrid, showMediumGrid, gridExtend, bw, gridColor, showWorksheet, instruction, showTitle, titleText, titlePosition, labelScale, subLabelScale, labelBold, subLabelBold, alignH, alignV]);
+  }, [axesConfig, xLabel, yLabel, xSubLabel, ySubLabel, showGrid, showMinorGrid, showMediumGrid, gridExtend, bw, gridColor, showWorksheet, instruction, showTitle, titleText, titlePosition, labelScale, subLabelScale, labelBold, subLabelBold, alignH, alignV, paperSize]);
 
   // Apply preset
   const applyPreset = (preset) => {
@@ -1717,9 +1786,8 @@ export default function SmartAxes() {
           {/* Paper size picker */}
           <div style={{ position: "relative" }}>
             <button
-              onClick={undefined}
-              disabled
-              style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 7, fontSize: 12, fontWeight: 500, color: "#9ca3af", cursor: "not-allowed", fontFamily: SANS, boxShadow: "none", opacity: 0.7 }}
+              onClick={() => setPaperOpen(o => !o)}
+              style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 10px", background: "#fff", border: "1px solid #e5e7eb", borderRadius: paperOpen ? "7px 7px 0 0" : 7, fontSize: 12, fontWeight: 500, color: "#374151", cursor: "pointer", fontFamily: SANS, boxShadow: "0 1px 2px rgba(0,0,0,0.05)" }}
             >
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><rect x="1.5" y="0.5" width="9" height="11" rx="1" stroke="currentColor" strokeWidth="1.2"/><path d="M3.5 3.5h5M3.5 6h5M3.5 8.5h3" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round"/></svg>
               {PAPER_OPTIONS.find(p => p.id === paperSize)?.label}
@@ -1824,8 +1892,8 @@ export default function SmartAxes() {
           <div
             ref={svgContainerRef}
             style={{
-              aspectRatio: "210 / 297",
-              width: isMobile ? "100%" : "min(100%, calc((100vh - 62px - 40px - 33px) * 210 / 297))",
+              aspectRatio: `${paper.wMM} / ${paper.hMM}`,
+              width: isMobile ? "100%" : `min(100%, calc((100vh - 62px - 40px - 33px) * ${paper.wMM} / ${paper.hMM}))`,
               ...(isMobile ? {} : { maxHeight: "100%" }),
               boxShadow: "0 4px 24px rgba(0,0,0,0.12), 0 1px 4px rgba(0,0,0,0.08)",
               borderRadius: 4, overflow: "hidden", background: "#fff",
@@ -1833,7 +1901,7 @@ export default function SmartAxes() {
             }}
           >
           {graphConfig ? (
-            <GraphSVG config={graphConfig} width={794} height={1123} />
+            <GraphSVG config={graphConfig} />
           ) : (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#94a3b8", fontSize: 13 }}>
               Enter valid axis ranges to see your graph

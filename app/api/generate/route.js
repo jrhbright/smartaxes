@@ -34,7 +34,7 @@ Rules:
 - Return ONLY the JSON object, no markdown, no explanation outside the JSON`;
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -57,17 +57,36 @@ Rules:
     console.log("Gemini raw data:", JSON.stringify(data).slice(0, 300));
 
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-    console.log("Extracted text:", text.slice(0, 200));
+    console.log("Extracted text:", text.slice(0, 300));
 
-    const clean = text.replace(/```json|```/g, "").trim();
+    // Try multiple strategies to extract valid JSON
+    let parsed = null;
 
-    try {
-      const parsed = JSON.parse(clean);
-      return Response.json(parsed);
-    } catch (parseErr) {
-      console.error("JSON parse failed:", parseErr.message, "raw text:", text);
+    // Strategy 1: direct parse
+    try { parsed = JSON.parse(text.trim()); } catch {}
+
+    // Strategy 2: strip markdown fences
+    if (!parsed) {
+      try {
+        const stripped = text.replace(/```json\s*/gi, "").replace(/```\s*/g, "").trim();
+        parsed = JSON.parse(stripped);
+      } catch {}
+    }
+
+    // Strategy 3: extract first {...} block
+    if (!parsed) {
+      try {
+        const match = text.match(/\{[\s\S]*\}/);
+        if (match) parsed = JSON.parse(match[0]);
+      } catch {}
+    }
+
+    if (!parsed) {
+      console.error("All parse strategies failed. Raw text:", text);
       return Response.json({ error: "Could not parse Gemini response", raw: text }, { status: 502 });
     }
+
+    return Response.json(parsed);
   } catch (outerErr) {
     console.error("Outer error:", outerErr.message);
     return Response.json({ error: outerErr.message }, { status: 500 });

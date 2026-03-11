@@ -33,8 +33,11 @@ Rules:
 - For time axes starting at 0, always use 0 as xMin
 - Return ONLY the JSON object, no markdown, no explanation outside the JSON`;
 
+    const model = process.env.GEMINI_MODEL || "gemini-3.1-flash-lite-preview";
+    console.log("Using model:", model);
+
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },

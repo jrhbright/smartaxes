@@ -214,24 +214,30 @@ function GraphSVG({ config }) {
 
   // Paper dimensions from size
   const PAPER_SIZES_SVG = {
-    "a4-portrait":  { wMM: 210, hMM: 297, wPx: 794,  hPx: 1123, twoUp: false },
-    "a4-landscape": { wMM: 297, hMM: 210, wPx: 1123, hPx: 794,  twoUp: false },
-    "a5-2up":       { wMM: 297, hMM: 210, wPx: 1123, hPx: 794,  twoUp: true  },
+    "a4-portrait":   { wMM: 210,   hMM: 297,   wPx: 794,  hPx: 1123, split: null     },
+    "a4-landscape":  { wMM: 297,   hMM: 210,   wPx: 1123, hPx: 794,  split: null     },
+    "a5-portrait":   { wMM: 148.5, hMM: 210,   wPx: 561,  hPx: 794,  split: null     },
+    "a5-landscape":  { wMM: 210,   hMM: 148.5, wPx: 794,  hPx: 561,  split: null     },
+    "a5-2up-land":   { wMM: 297,   hMM: 210,   wPx: 1123, hPx: 794,  split: "h"      }, // 2×A5 side by side on A4 landscape
+    "a5-2up-port":   { wMM: 210,   hMM: 297,   wPx: 794,  hPx: 1123, split: "v"      }, // 2×A5 stacked on A4 portrait
   };
   const paper = PAPER_SIZES_SVG[paperSize] || PAPER_SIZES_SVG["a4-portrait"];
-  const twoUp = paper.twoUp;
+  const splitDir = paper.split; // null | "h" (side by side) | "v" (stacked)
+  const twoUp = splitDir !== null;
 
-  // For 2-up: the full SVG canvas is A4 landscape, but each graph lives in one A5 half.
-  // Gap between halves: 3mm in px
-  const GAP_MM = 3;
+  const GAP_MM = twoUp ? 3 : 0;
   const GAP_PX = twoUp ? Math.round(GAP_MM * (paper.wPx / paper.wMM)) : 0;
-  const HALF_W = twoUp ? (paper.wPx - GAP_PX) / 2 : paper.wPx;
 
-  // MM_TO_PX and page dimensions for the graph's coordinate system
-  // For 2-up, the graph thinks it's on an A5 portrait page (148.5 × 210mm)
-  const graphWPx = twoUp ? HALF_W : paper.wPx;
-  const graphHPx = paper.hPx;
-  const graphWMM = twoUp ? 148.5 : paper.wMM;
+  // For horizontal split: each half is half the width, full height
+  // For vertical split: each half is full width, half the height
+  const HALF_W = splitDir === "h" ? (paper.wPx - GAP_PX) / 2 : paper.wPx;
+  const HALF_H = splitDir === "v" ? (paper.hPx - GAP_PX) / 2 : paper.hPx;
+
+  // The graph's internal coordinate space
+  const graphWPx = HALF_W;
+  const graphHPx = HALF_H;
+  const graphWMM = splitDir === "h" ? (paper.wMM - GAP_MM) / 2 : paper.wMM;
+  const graphHMM = splitDir === "v" ? (paper.hMM - GAP_MM) / 2 : paper.hMM;
   const MM_TO_PX = graphWPx / graphWMM;
   const pageW = graphWPx;
   const pageH = graphHPx;
@@ -857,7 +863,8 @@ function GraphSVG({ config }) {
   );
 
   // ── Render ────────────────────────────────────────────────────
-  const rightOffset = HALF_W + GAP_PX;
+  const rightOffset  = HALF_W + GAP_PX;
+  const bottomOffset = HALF_H + GAP_PX;
 
   return (
     <svg
@@ -870,40 +877,46 @@ function GraphSVG({ config }) {
     >
       {twoUp ? (
         <>
-          {/* Left half */}
+          {/* First half */}
           <g>{graphContent}</g>
-          {/* Right half — identical graph translated across */}
-          <g transform={`translate(${rightOffset}, 0)`}>{graphContent}</g>
-          {/* Clip paths */}
-          <defs>
-            <clipPath id="left-clip">
-              <rect x={0} y={0} width={HALF_W} height={fullH} />
-            </clipPath>
-            <clipPath id="right-clip" clipPathUnits="userSpaceOnUse">
-              <rect x={rightOffset} y={0} width={HALF_W} height={fullH} />
-            </clipPath>
-          </defs>
+          {/* Second half — translated right (h) or down (v) */}
+          <g transform={splitDir === "h"
+            ? `translate(${rightOffset}, 0)`
+            : `translate(0, ${bottomOffset})`}
+          >{graphContent}</g>
+
           {/* Gap — white */}
-          <rect x={HALF_W} y={0} width={GAP_PX} height={fullH} fill="#fff" />
-          {/* Cut marks — T at top, inverted T at bottom, centred on gap */}
+          {splitDir === "h"
+            ? <rect x={HALF_W} y={0} width={GAP_PX} height={fullH} fill="#fff" />
+            : <rect x={0} y={HALF_H} width={fullW} height={GAP_PX} fill="#fff" />
+          }
+
+          {/* Cut marks */}
           {(() => {
-            const cx = HALF_W + GAP_PX / 2; // centre of gap
-            const armMM = 10; // horizontal arm length in mm (5mm each side)
-            const legMM = 10; // vertical leg length in mm
-            const arm = armMM * MM_TO_PX;
-            const leg = legMM * MM_TO_PX;
-            const sw = 0.8;
-            const col = "#999";
-            return (
-              <g stroke={col} strokeWidth={sw} strokeLinecap="round">
-                {/* Top — T shape: horizontal bar at very top, leg pointing down */}
-                <line x1={cx - arm / 2} y1={0} x2={cx + arm / 2} y2={0} />
-                <line x1={cx} y1={0} x2={cx} y2={leg} />
-                {/* Bottom — inverted T: horizontal bar at very bottom, leg pointing up */}
-                <line x1={cx - arm / 2} y1={fullH} x2={cx + arm / 2} y2={fullH} />
-                <line x1={cx} y1={fullH} x2={cx} y2={fullH - leg} />
-              </g>
-            );
+            const arm = 10 * MM_TO_PX;
+            const leg = 10 * MM_TO_PX;
+            const sw = 0.8, col = "#999";
+            if (splitDir === "h") {
+              const cx = HALF_W + GAP_PX / 2;
+              return (
+                <g stroke={col} strokeWidth={sw} strokeLinecap="round">
+                  <line x1={cx - arm/2} y1={0} x2={cx + arm/2} y2={0} />
+                  <line x1={cx} y1={0} x2={cx} y2={leg} />
+                  <line x1={cx - arm/2} y1={fullH} x2={cx + arm/2} y2={fullH} />
+                  <line x1={cx} y1={fullH} x2={cx} y2={fullH - leg} />
+                </g>
+              );
+            } else {
+              const cy = HALF_H + GAP_PX / 2;
+              return (
+                <g stroke={col} strokeWidth={sw} strokeLinecap="round">
+                  <line x1={0} y1={cy - arm/2} x2={0} y2={cy + arm/2} />
+                  <line x1={0} y1={cy} x2={leg} y2={cy} />
+                  <line x1={fullW} y1={cy - arm/2} x2={fullW} y2={cy + arm/2} />
+                  <line x1={fullW} y1={cy} x2={fullW - leg} y2={cy} />
+                </g>
+              );
+            }
           })()}
         </>
       ) : (
@@ -1113,9 +1126,12 @@ export default function SmartAxes() {
   const [paperOpen, setPaperOpen] = useState(false);
 
   const PAPER_SIZES = {
-    "a4-portrait":  { label: "A4 Portrait",  wMM: 210, hMM: 297, wPx: 794,  hPx: 1123 },
-    "a4-landscape": { label: "A4 Landscape", wMM: 297, hMM: 210, wPx: 1123, hPx: 794  },
-    "a5-2up":       { label: "2× A5 on A4 Landscape", wMM: 297, hMM: 210, wPx: 1123, hPx: 794, twoUp: true },
+    "a4-portrait":  { label: "A4 Portrait",           wMM: 210,   hMM: 297,   wPx: 794,  hPx: 1123, split: null },
+    "a4-landscape": { label: "A4 Landscape",           wMM: 297,   hMM: 210,   wPx: 1123, hPx: 794,  split: null },
+    "a5-portrait":  { label: "A5 Portrait",            wMM: 148.5, hMM: 210,   wPx: 561,  hPx: 794,  split: null },
+    "a5-landscape": { label: "A5 Landscape",           wMM: 210,   hMM: 148.5, wPx: 794,  hPx: 561,  split: null },
+    "a5-2up-land":  { label: "2× A5 on A4 Landscape", wMM: 297,   hMM: 210,   wPx: 1123, hPx: 794,  split: "h"  },
+    "a5-2up-port":  { label: "2× A5 on A4 Portrait",  wMM: 210,   hMM: 297,   wPx: 794,  hPx: 1123, split: "v"  },
   };
   const PAPER_OPTIONS = Object.entries(PAPER_SIZES).map(([id, p]) => ({ id, label: p.label }));
   const paper = PAPER_SIZES[paperSize] || PAPER_SIZES["a4-portrait"];
@@ -1182,10 +1198,13 @@ export default function SmartAxes() {
     if (isNaN(xn) || isNaN(xx) || isNaN(yn) || isNaN(yx)) return null;
 
     // ── Font sizes (same formula as GraphSVG, using selected paper width) ──
-    const twoUp = paperSize === "a5-2up";
-    const GAP_MM = twoUp ? 3 : 0;
-    const graphWMM = twoUp ? (paper.wMM - GAP_MM) / 2 : paper.wMM;
-    const graphWPx = twoUp ? (paper.wPx - Math.round(GAP_MM * paper.wPx / paper.wMM)) / 2 : paper.wPx;
+    const splitDir = paper.split;
+    const GAP_MM = splitDir ? 3 : 0;
+    const GAP_PX_est = splitDir ? Math.round(GAP_MM * paper.wPx / paper.wMM) : 0;
+    // Graph occupies one half: horizontal split → half width; vertical split → half height
+    const graphWPx = splitDir === "h" ? (paper.wPx - GAP_PX_est) / 2 : paper.wPx;
+    const graphHPx = splitDir === "v" ? (paper.hPx - GAP_PX_est) / 2 : paper.hPx;
+    const graphWMM = splitDir === "h" ? (paper.wMM - GAP_MM) / 2 : paper.wMM;
     const MM_TO_PX = graphWPx / graphWMM;
     const BASE_FONT_PX = 2 * MM_TO_PX * 2.2 * 1.2;
     const tickFontPx  = Math.max(6, Math.min(BASE_FONT_PX * 1.8, BASE_FONT_PX * labelScale));
@@ -1251,10 +1270,8 @@ export default function SmartAxes() {
     const topMarginPx   = (8 * MM_TO_PX) + ARROW_PX + tickFontPx * 1.0 + headerH;
 
     // ── Available space in px then convert to 2mm squares ──
-    const pageWpx = graphWPx;
-    const pageHpx = paper.hPx;
-    const availWpx = pageWpx - leftMarginPx - rightMarginPx;
-    const availHpx = pageHpx - topMarginPx - bottomMarginPx;
+    const availWpx = graphWPx - leftMarginPx - rightMarginPx;
+    const availHpx = graphHPx - topMarginPx - bottomMarginPx;
     const availXSq = Math.max(10, availWpx / (STANDARD_SQUARE_MM * MM_TO_PX));
     const availYSq = Math.max(10, availHpx / (STANDARD_SQUARE_MM * MM_TO_PX));
 

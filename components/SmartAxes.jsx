@@ -210,6 +210,7 @@ function GraphSVG({ config }) {
     labelScale, subLabelScale, labelBold, subLabelBold,
     alignH = "auto", alignV = "auto",
     paperSize = "a4-portrait",
+    ySubLabelHoriz = false,
   } = config;
 
   // Paper dimensions from size
@@ -277,11 +278,17 @@ function GraphSVG({ config }) {
   const maxYCharsEst = Math.max(...yTickStrsG.map(s => s.length));
   const estNumWidth  = maxYCharsEst * fontSize * 0.52;
 
+  // ── Horizontal y sub-label column ────────────────────────────
+  const HORIZ_COL_MM  = 20;
+  const HORIZ_GAP_MM  = 3;
+  const horizColPx    = ySubLabelHoriz && ySubLabel ? (HORIZ_COL_MM + HORIZ_GAP_MM) * MM_TO_PX : 0;
+
   // ── Dynamic margins ────────────────────────────────────────────
   // Left: when y-axis at edge, reserve room for sub-label + tick numbers
-  const leftMargin = xNegative
+  // Add horiz column width if horizontal y sub-label is on
+  const leftMargin = (xNegative
     ? edgePx
-    : edgePx + subLineH + subGap + estNumWidth + TICK_GAP_PX + TICK_LEN / 2;
+    : edgePx + subLineH + subGap + estNumWidth + TICK_GAP_PX + TICK_LEN / 2) + horizColPx;
 
   // Bottom: when x-axis at edge, reserve room for sub-label + tick height
   const bottomMargin = yNegative
@@ -787,6 +794,7 @@ function GraphSVG({ config }) {
 
       {/* Y sub-label — centred on positive part of y axis only, never crossing x axis */}
       {ySubLabel && (() => {
+        // Compute subX the same way for both modes — right edge of label column
         const maxChars = (() => {
           const allVals = [];
           for (let yi = 0; yi < Math.round((yAxis.max - yAxis.min) / yAxis.interval) + 1; yi++) {
@@ -799,20 +807,63 @@ function GraphSVG({ config }) {
         const numbersX = yAxisX - tickLen / 2 - numPad;
         const subGapPx = subFontSize * 0.25 + 2;
         const subX = numbersX - estimatedNumWidth - subGapPx - subFontSize / 2;
-        const posTop = gridTop;
-        const posBottom = xAxisY;
-        const centreY = posTop + (posBottom - posTop) / 2;
-        return (
-          <text
-            x={subX} y={centreY}
-            textAnchor="middle" fontSize={subFontSize}
-            fill={textColor} fontFamily={SERIF}
-            fontWeight={subLabelBold ? "bold" : "normal"}
-            transform={`rotate(-90, ${subX}, ${centreY})`}
-          >
-            {ySubLabel}
-          </text>
-        );
+        // Right edge of the vertical label = subX + subFontSize/2
+        const rightEdge = subX + subFontSize / 2;
+
+        if (ySubLabelHoriz) {
+          // ── Horizontal y sub-label: right-aligned to rightEdge, vertically centred on grid ──
+          const colW = HORIZ_COL_MM * MM_TO_PX;
+          const colRightX = rightEdge;
+          const lineH = subFontSize * 1.35;
+          // Word-wrap into lines that fit colW
+          const words = ySubLabel.split(" ");
+          const lines = [];
+          let current = "";
+          for (const word of words) {
+            const test = current ? current + " " + word : word;
+            if (current && test.length * subFontSize * 0.52 > colW) {
+              lines.push(current);
+              current = word;
+            } else {
+              current = test;
+            }
+          }
+          if (current) lines.push(current);
+          const blockH = lines.length * lineH;
+          const centreY = gridTop + (xAxisY - gridTop) / 2;
+          const startY = centreY - blockH / 2;
+          return (
+            <g>
+              {lines.map((line, i) => (
+                <text
+                  key={i}
+                  x={colRightX} y={startY + i * lineH + subFontSize}
+                  textAnchor="end" fontSize={subFontSize}
+                  fill={textColor} fontFamily={SERIF}
+                  fontWeight={subLabelBold ? "bold" : "normal"}
+                >
+                  {line}
+                </text>
+              ))}
+            </g>
+          );
+        } else {
+          // ── Vertical y sub-label (default) ──
+          const posTop = gridTop;
+          const posBottom = xAxisY;
+          const centreY = posTop + (posBottom - posTop) / 2;
+          return (
+            <text
+              x={subX} y={centreY}
+              textAnchor="middle" fontSize={subFontSize}
+              fill={textColor} fontFamily={SERIF}
+              fontWeight={subLabelBold ? "bold" : "normal"}
+              transform={`rotate(-90, ${subX}, ${centreY})`}
+            >
+              {ySubLabel}
+            </text>
+          );
+        }
       })()}
       {/* Title — rendered last so it always sits on top of the grid */}
       {showTitle && titleText && (() => {
@@ -1097,6 +1148,7 @@ export default function SmartAxes() {
   const [subLabelScale, setSubLabelScale] = useState(1.0);
   const [labelBold, setLabelBold] = useState(false);
   const [subLabelBold, setSubLabelBold] = useState(false);
+  const [ySubLabelHoriz, setYSubLabelHoriz] = useState(false);
 
   // Headers
   const [showTitle, setShowTitle] = useState(false);
@@ -1252,11 +1304,10 @@ export default function SmartAxes() {
     const yNegative = yn < 0; // x-axis inside grid
 
     // ── Left margin ──
-    // When y-axis is at left edge: edge + subLabel line + gap + tick width + tick gap + tick mark
-    // When y-axis is inside grid: just minClearance
-    const leftMarginPx = xNegative
+    const horizColPx = ySubLabelHoriz && ySubLabel ? (20 + 3) * MM_TO_PX : 0;
+    const leftMarginPx = (xNegative
       ? 8 * MM_TO_PX
-      : edgePx + subLineH + subGap + estYTickWidthPx + TICK_GAP_PX + TICK_LEN_PX / 2;
+      : edgePx + subLineH + subGap + estYTickWidthPx + TICK_GAP_PX + TICK_LEN_PX / 2) + horizColPx;
 
     // ── Bottom margin ──
     // When x-axis is at bottom edge: edge + subLabel line + gap + tick height + tick gap + tick mark
@@ -1276,7 +1327,7 @@ export default function SmartAxes() {
     const availYSq = Math.max(10, availHpx / (STANDARD_SQUARE_MM * MM_TO_PX));
 
     return smartCalculateAxes(xn, xx, yn, yx, availXSq, availYSq);
-  }, [xMin, xMax, yMin, yMax, labelScale, subLabelScale, xSubLabel, ySubLabel, showWorksheet, showTitle, titlePosition, paperSize]);
+  }, [xMin, xMax, yMin, yMax, labelScale, subLabelScale, xSubLabel, ySubLabel, showWorksheet, showTitle, titlePosition, paperSize, ySubLabelHoriz]);
 
   useEffect(() => {
     if (axesConfig) setWarnings(axesConfig.warnings);
@@ -1294,8 +1345,9 @@ export default function SmartAxes() {
       labelScale, subLabelScale, labelBold, subLabelBold,
       alignH, alignV,
       paperSize,
+      ySubLabelHoriz,
     };
-  }, [axesConfig, xLabel, yLabel, xSubLabel, ySubLabel, showGrid, showMinorGrid, showMediumGrid, gridExtend, bw, gridColor, showWorksheet, instruction, showTitle, titleText, titlePosition, labelScale, subLabelScale, labelBold, subLabelBold, alignH, alignV, paperSize]);
+  }, [axesConfig, xLabel, yLabel, xSubLabel, ySubLabel, showGrid, showMinorGrid, showMediumGrid, gridExtend, bw, gridColor, showWorksheet, instruction, showTitle, titleText, titlePosition, labelScale, subLabelScale, labelBold, subLabelBold, alignH, alignV, paperSize, ySubLabelHoriz]);
 
   // Apply preset
   const applyPreset = (preset) => {
@@ -1640,6 +1692,13 @@ export default function SmartAxes() {
               <Field label="Label"><Input value={yLabel} onChange={v => { setYLabel(v); setActivePreset(null); }} /></Field>
             </div>
             <Field label="Y sub-label"><Input value={ySubLabel} onChange={v => { setYSubLabel(v); setActivePreset(null); }} /></Field>
+            {ySubLabel && (
+              <Toggle
+                checked={ySubLabelHoriz}
+                onChange={setYSubLabelHoriz}
+                label="Horizontal y sub-label"
+              />
+            )}
           </div>
         </div>
 
